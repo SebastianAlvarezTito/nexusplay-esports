@@ -6,7 +6,7 @@
 #   3) instala kube-prometheus-stack con Helm   4) construye las imágenes dentro de Minikube
 #   5) aplica los manifiestos y el dashboard    6) muestra las URLs
 #
-# Variables opcionales: MINIKUBE_CPUS (4)  MINIKUBE_MEMORY en MB (6144)  IMAGE_TAG (1.0.0)
+# Variables opcionales: MINIKUBE_CPUS (4)  MINIKUBE_MEMORY en MB (3072)  IMAGE_TAG (1.0.0)
 # En Windows ejecútalo desde Git Bash o WSL.
 # =============================================================================
 set -Eeuo pipefail
@@ -17,7 +17,7 @@ NS_MON="monitoring"
 RELEASE="kube-prometheus-stack"
 IMAGE_TAG="${IMAGE_TAG:-1.0.0}"
 MINIKUBE_CPUS="${MINIKUBE_CPUS:-4}"
-MINIKUBE_MEMORY="${MINIKUBE_MEMORY:-6144}"
+MINIKUBE_MEMORY="${MINIKUBE_MEMORY:-3072}"
 
 log()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✔\033[0m %s\n' "$*"; }
@@ -99,19 +99,21 @@ kubectl -n "$NS_APP" rollout status deployment/tournament-service --timeout=300s
 kubectl -n "$NS_APP" rollout status deployment/matchmaking-service --timeout=300s
 ok "Pods en Running"
 
-# Verificación best-effort: ambos targets UP en Prometheus
-log "Verificando targets en Prometheus (best-effort)"
-PROM_POD="prometheus-${RELEASE}-prometheus-0"
-targets_up=0
+# Verificación best-effort: comprobamos que ambos servicios tengan Endpoints (IPs) listos.
+# Usamos kubectl en lugar de wget dentro del pod de Prometheus (que no tiene wget instalado).
+log "Verificando endpoints de los servicios (best-effort)"
+targets_ready=0
 for _ in $(seq 1 24); do
-  out="$(kubectl -n "$NS_MON" exec "$PROM_POD" -c prometheus -- \
-        wget -qO- 'http://localhost:9090/api/v1/query?query=up%7Bnamespace%3D%22nexusplay%22%7D' 2>/dev/null || true)"
-  targets_up="$(printf '%s' "$out" | grep -o '"1"\]' | wc -l | tr -d ' ')"
-  [[ "$targets_up" -ge 2 ]] && break
+  endpoints_count="$(kubectl -n "$NS_APP" get endpoints tournament-service matchmaking-service -o jsonpath='{range .items[*]}{.subsets[*].addresses[*].ip}{"\n"}{end}' 2>/dev/null | grep -c . || true)"
+  [[ "${endpoints_count:-0}" -ge 2 ]] && targets_ready=1 && break
   sleep 5
 done
-if [[ "$targets_up" -ge 2 ]]; then ok "tournament-service y matchmaking-service en estado UP"
-else warn "Aún no se ven ambos targets UP; revisa http://<url-prometheus>/targets en 1-2 minutos"; fi
+
+if [[ "$targets_ready" -eq 1 ]]; then 
+  ok "Ambos servicios tienen Endpoints listos (los targets estarán UP en Prometheus en unos segundos)"
+else 
+  warn "Aún no se ven ambos endpoints listos; revisa http://<url-prometheus>/targets en 1-2 minutos"
+fi
 
 # ------------------------------------------------------------------ 6) URLs
 log "6/6 Accesos"
