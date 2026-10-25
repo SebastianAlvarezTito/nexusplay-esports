@@ -1,0 +1,54 @@
+# values.yaml para prometheus-community/kube-prometheus-stack (Minikube)
+#   helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#        -n monitoring --create-namespace -f k8s/monitoring/kube-prometheus-stack-values.yaml
+
+grafana:
+  adminPassword: "Nx-Play-2026!"
+  defaultDashboardsTimezone: America/Lima
+  service:
+    type: NodePort
+    nodePort: 30300
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+
+prometheus:
+  service:
+    type: NodePort
+    nodePort: 30900
+  prometheusSpec:
+    # ---- Selectores: que Prometheus descubra objetos de CUALQUIER namespace --------------------
+    # Por defecto el chart fija  serviceMonitorSelector: {matchLabels: {release: <nombre-del-release>}}
+    # y Prometheus ignora los ServiceMonitors/PrometheusRules que no lleven ese label.
+    # Con "NilUsesHelmValues: false" el selector queda vacío ({}) = selecciona todos.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorNamespaceSelector: {}
+    ruleSelectorNilUsesHelmValues: false
+    ruleNamespaceSelector: {}
+    probeSelectorNilUsesHelmValues: false
+    retention: 6h
+    resources:
+      requests:
+        cpu: 200m
+        memory: 400Mi
+      limits:
+        memory: 1Gi
+
+alertmanager:
+  service:
+    type: NodePort
+    nodePort: 30903
+
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeProxy:
+  enabled: false

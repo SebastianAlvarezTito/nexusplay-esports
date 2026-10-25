@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: matchmaking-service
+  namespace: nexusplay
+  labels:
+    app: matchmaking-service
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: matchmaking-service
+  namespaceSelector:
+    matchNames:
+      - nexusplay
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s

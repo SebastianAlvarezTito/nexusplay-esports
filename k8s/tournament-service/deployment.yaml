@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tournament-service
+  namespace: nexusplay
+  labels:
+    app: tournament-service
+    app.kubernetes.io/part-of: nexusplay
+spec:
+  replicas: 1
+  # Recreate (a propósito): con 1 réplica, un rollout fallido deja el servicio realmente caído
+  # y las casuísticas 1 y 2 se ven claras en Grafana. En producción se usaría RollingUpdate.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tournament-service
+  template:
+    metadata:
+      labels:
+        app: tournament-service
+        app.kubernetes.io/part-of: nexusplay
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: tournament-service
+          image: tournament-service:1.0.0
+          # La imagen se construyó dentro del daemon de Minikube (eval $(minikube docker-env)):
+          # IfNotPresent evita intentar bajarla de un registry remoto.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: SERVER_PORT
+              value: "8081"
+            # Casuística 2: delay artificial en ms (0 = sin delay)
+            - name: ARTIFICIAL_DELAY_MS
+              value: "0"
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=70 -XX:+UseSerialGC"
+          # Liveness: "¿el proceso está vivo?" -> si falla, kubelet REINICIA el contenedor.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 25
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          # Readiness: "¿puede recibir tráfico?" -> si falla, el pod sale de los Endpoints del Service.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

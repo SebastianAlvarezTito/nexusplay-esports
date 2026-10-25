@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: matchmaking-service
+  namespace: nexusplay
+  labels:
+    app: matchmaking-service
+    app.kubernetes.io/part-of: nexusplay
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: matchmaking-service
+  template:
+    metadata:
+      labels:
+        app: matchmaking-service
+        app.kubernetes.io/part-of: nexusplay
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: matchmaking-service
+          image: matchmaking-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8082
+          env:
+            - name: SERVER_PORT
+              value: "8082"
+            # Servicio A, resuelto por DNS interno del cluster (mismo namespace)
+            - name: TOURNAMENT_SERVICE_URL
+              value: "http://tournament-service:8081"
+            # Tiempo máximo de espera hacia A. Casuística 2: delay de A (4000) > este valor (2000).
+            - name: TOURNAMENT_CLIENT_TIMEOUT_MS
+              value: "2000"
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=70 -XX:+UseSerialGC"
+          # El /health de B NO consulta a A: una caída de A no debe reiniciar a B.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 25
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

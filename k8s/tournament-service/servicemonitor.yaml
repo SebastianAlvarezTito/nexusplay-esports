@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tournament-service
+  namespace: nexusplay
+  labels:
+    app: tournament-service
+    release: kube-prometheus-stack   # refuerzo: coincide con el selector por defecto del chart
+spec:
+  selector:
+    matchLabels:
+      app: tournament-service        # == labels del Service
+  namespaceSelector:
+    matchNames:
+      - nexusplay
+  endpoints:
+    - port: http                     # == nombre del puerto en el Service
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s

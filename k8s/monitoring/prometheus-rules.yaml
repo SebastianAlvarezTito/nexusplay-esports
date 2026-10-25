@@ -1,0 +1,97 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nexusplay-alerts
+  namespace: nexusplay
+  labels:
+    app.kubernetes.io/part-of: nexusplay
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: nexusplay.availability
+      rules:
+        - alert: TournamentServiceDown
+          expr: (sum(up{job="tournament-service", namespace="nexusplay"}) or vector(0)) < 1
+          for: 1m
+          labels:
+            severity: critical
+            service: tournament-service
+          annotations:
+            summary: "tournament-service está caído"
+            description: >-
+              Ningún pod de tournament-service responde al scrape de Prometheus. Sin el Servicio A no se pueden
+              consultar torneos ni reservar cupos: las inscripciones de equipos están bloqueadas.
+
+        - alert: MatchmakingServiceDown
+          expr: (sum(up{job="matchmaking-service", namespace="nexusplay"}) or vector(0)) < 1
+          for: 1m
+          labels:
+            severity: critical
+            service: matchmaking-service
+          annotations:
+            summary: "matchmaking-service está caído"
+            description: >-
+              Ningún pod de matchmaking-service responde. Los equipos no pueden inscribirse
+              y no se generan emparejamientos.
+
+        - alert: NexusPlayPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="nexusplay"}[10m]) > 2
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.pod }} reiniciándose en bucle"
+            description: >-
+              El contenedor {{ $labels.container }} del pod {{ $labels.pod }} se reinició más de 2 veces en 10 minutos
+              (probable CrashLoopBackOff por probe fallido o error de configuración).
+
+    # ----------------------------------------------------------------- negocio eSports
+    - name: nexusplay.business
+      rules:
+        - alert: MatchmakingTournamentTimeouts
+          expr: sum(rate(matchmaking_tournament_client_errors_total{reason="timeout"}[2m])) > 0.1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "matchmaking-service sufre timeouts consultando a tournament-service"
+            description: >-
+              Más de 0.1 timeouts/s en las llamadas de matchmaking hacia tournament-service. Los jugadores ven
+              errores 503 al inscribirse. Revisa la latencia de tournament-service y la métrica
+              tournament_artificial_delay_ms.
+
+        - alert: TournamentServiceSlowForMatchmaking
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(matchmaking_tournament_client_duration_seconds_bucket[2m]))
+            ) > 1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Latencia p95 de matchmaking → tournament-service superior a 1s"
+            description: >-
+              El Servicio A responde lento al Servicio B (p95 > 1s). La degradación de A se propaga a la
+              experiencia de inscripción del jugador.
+
+        - alert: HighTeamRegistrationRejections
+          expr: sum(rate(matchmaking_registrations_rejected_total{reason="full"}[2m])) > 0.2
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Demanda de inscripción insatisfecha: equipos rechazados por torneo lleno"
+            description: >-
+              Se están rechazando más de 0.2 inscripciones/s porque los torneos no tienen cupos. Cada rechazo es un
+              equipo (y su inscripción) que se pierde: evalúa ampliar la capacidad con POST /api/tournaments/{id}/capacity
+              o abrir un torneo adicional.
+
+        - alert: NoOpenTournaments
+          expr: tournament_open_count < 1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No hay ningún torneo aceptando inscripciones"
+            description: >-
+              Todos los torneos están llenos o en curso: los equipos nuevos no tienen dónde inscribirse.
